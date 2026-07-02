@@ -1,58 +1,101 @@
-form_data = {
-    "Registration No": "",
-    "Date": "",
-    "Name": "",
-    "Guardian Name": "",
-    "Relationship with Guardian": "",
+﻿import difflib
+import re
 
-    "Age": "",
-    "Gender": "",
-    "Marital Status": "",
-    "No of Children": "",
+FORM_FIELDS = [
+    "Registration No",
+    "Date",
+    "Name",
+    "Guardian Name",
+    "Relationship with Guardian",
 
-    "Religion": "",
-    "Maslak": "",
-    "Kya aap Milaad/Nazr Niyaz/Fateha maantay hain?": "",
-    "Caste": "",
-    "Mother Tongue": "",
+    "Age",
+    "Gender",
+    "Marital Status",
+    "No of Children",
 
-    "Height": "",
-    "Complexion": "",
-    "Any Physical Illness": "",
-    "Any Physical Disability": "",
+    "Religion",
+    "Maslak",
+    "Kya aap Milaad/Nazr Niyaz/Fateha maantay hain?",
+    "Caste",
+    "Mother Tongue",
 
-    "Qualification": "",
-    "Job & Profession": "",
-    "Monthly Income": "",
-    "Girl/Woman: Ghar ka kya kya kaam aata hai?": "",
+    "Height",
+    "Complexion",
+    "Any Physical Illness",
+    "Any Physical Disability",
 
-    "Your Current City": "",
-    "State/Province": "",
-    "Country": "",
-    "Nationality/Visa Status": "",
-    "In Pakistan from which city you belongs to": "",
+    "Qualification",
+    "Job & Profession",
+    "Monthly Income",
+    "Girl/Woman: Ghar ka kya kya kaam aata hai?",
 
-    "About Father": "",
-    "About Mother": "",
-    "About Sisters": "",
-    "About Brothers": "",
+    "Your Current City",
+    "State/Province",
+    "Country",
+    "Nationality/Visa Status",
+    "In Pakistan from which city you belongs to",
 
-    "About Your Personality": "",
-    "About Your Hobby": "",
-    "Any other detail": "",
+    "About Father",
+    "About Mother",
+    "About Sisters",
+    "About Brothers",
 
-    "About your Home: Size? Own/Rent?": "",
-    "Your Living Standard": "",
-    "Your Social Class": "",
+    "About Your Personality",
+    "About Your Hobby",
+    "Any other detail",
 
-    "Your Requirements in Detail": "",
-    "Requirements Marital Status": "",
-    "Requirements Age": "",
-    "Requirements Qualification": "",
-    "Requirements Caste": "",
-    "Requirements Height": "",
-    "Requirements City & Country": "",
-    "Requirements Other details": "",
+    "About your Home: Size? Own/Rent?",
+    "Your Living Standard",
+    "Your Social Class",
 
-    "Profile Posted By": ""
+    "Your Requirements in Detail",
+    "Profile Posted By",
+]
+
+REQUIREMENT_DUPLICATE_FIELDS = {
+    "Marital Status": "Requirements Marital Status",
+    "Age": "Requirements Age",
+    "Qualification": "Requirements Qualification",
+    "Caste": "Requirements Caste",
+    "Height": "Requirements Height",
+    "City & Country": "Requirements City & Country",
+    "Other details": "Requirements Other details",
 }
+
+ALL_FIELDS = FORM_FIELDS + list(REQUIREMENT_DUPLICATE_FIELDS.values())
+SECTION_HEADER = "Your Requirements in Detail"
+
+
+def normalize_key(text):
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9 ]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def normalize_text(text):
+    text = text.strip()
+    text = re.sub(r"[^a-zA-Z0-9: /?&\-]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def build_key_map():
+    return {normalize_key(field): field for field in FORM_FIELDS}
+
+
+def get_default_form_data():
+    return {field: "" for field in ALL_FIELDS}
+
+
+def resolve_key(raw_key, key_map, threshold=0.75):
+    cleaned = normalize_key(raw_key)
+    exact = key_map.get(cleaned)
+    if exact:
+        return exact
+
+    best_matches = difflib.get_close_matches(cleaned, key_map.keys(), n=1, cutoff=threshold)
+    if best_matches:
+        return key_map[best_matches[0]]
+
+    return None
+
