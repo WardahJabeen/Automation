@@ -48,6 +48,8 @@ def parse_line(line, key_map):
             return key, value_part.strip()
 
     normalized = re.sub(r"[^a-z0-9 ]+", "", cleaned.lower()).strip()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    
     if not normalized:
         return None, None
 
@@ -160,17 +162,24 @@ def parse_form(lines):
         line = raw_line.rstrip("\n")
         i += 1
 
+        
+
         if not line.strip():
             continue
 
+        
+            
         # First, try to extract multiple key:value pairs that may exist on the same line
         pairs, leading = find_key_value_pairs(line, key_map)
         if pairs:
+            
             # if there's leading text before the first key, treat it as continuation
             if leading and last_key is not None:
                 existing = form_data.get(last_key, "")
                 combined = (existing + " " + leading) if existing else leading
                 form_data[last_key] = sanitize_value(combined)
+           
+                
 
             for k, v in pairs:
                 if k == SECTION_HEADER:
@@ -201,8 +210,12 @@ def parse_form(lines):
 
             continue
 
+        
+
+
         # Fallback to single-key parsing
         key, value = parse_line(line, key_map)
+
 
         # If there was a pending key (key on previous line with value on this line)
         if pending_key is not None:
@@ -220,6 +233,7 @@ def parse_form(lines):
                 continue
             # If this line started a new key, set empty value for pending_key
             form_data[pending_key] = ""
+
             pending_key = None
 
         # If no key detected on this line, treat it as continuation of last filled key
@@ -246,11 +260,13 @@ def parse_form(lines):
         if in_requirements and key in REQUIREMENT_DUPLICATE_FIELDS:
             key = REQUIREMENT_DUPLICATE_FIELDS[key]
 
+            
         # If value is None then the next non-empty line is the value
         if value is None:
             pending_key = key
             last_key = key
             continue
+
 
         # Otherwise append the value to existing (to collect duplicates) and remember last key
         existing = form_data.get(key, "")
@@ -265,6 +281,7 @@ def parse_form(lines):
     if pending_key is not None:
         form_data[pending_key] = ""
 
+     
     return form_data
 
 
