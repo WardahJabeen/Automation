@@ -18,8 +18,7 @@ from form_fields import (
     resolve_key,
     normalize_key,
 )
-
-
+ 
 def normalize_text(text):
     text = text.strip()
     text = re.sub(r"[^a-zA-Z0-9: /?&\-]+", " ", text)
@@ -337,10 +336,18 @@ def insert_into_mysql(form_data, host, user, password, database, table):
     return rowcount
 
 
+# def read_input(file_path=None):
+#     if file_path:
+#         with open(file_path, "r", encoding="utf-8") as handle:
+#             return handle.readlines()
+#     return sys.stdin.readlines()
+
+
 def read_input(file_path=None):
     if file_path:
         with open(file_path, "r", encoding="utf-8") as handle:
             return handle.readlines()
+
     return sys.stdin.readlines()
 
 
@@ -359,6 +366,7 @@ def main():
     args = parser.parse_args()
 
     lines = read_input(args.file)
+
     parsed, seen_keys = parse_form(lines)
 
     if args.json:
