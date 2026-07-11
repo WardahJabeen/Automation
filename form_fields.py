@@ -50,6 +50,13 @@ FORM_FIELDS = [
 
     "Your Requirements in Detail",
     "Profile Posted By",
+    "City & Country",
+    "Other details",
+
+    "Kya aap ke paas Divorce/Khula certificate hai?:",
+    "Female: Kya aap First wife ki mojoodgi mei 2nd wife banney ko tayyar hain?:",
+    "Sawal. Aap First wife ki mojoodgi mei 2nd marriage kiyun kerna chahtay hain?",
+    "Sawal: Ky aap ke paas 2nd marriage ke liye Govt Permission hai? ",
 ]
 
 REQUIREMENT_DUPLICATE_FIELDS = {
@@ -58,11 +65,19 @@ REQUIREMENT_DUPLICATE_FIELDS = {
     "Qualification": "Requirements Qualification",
     "Caste": "Requirements Caste",
     "Height": "Requirements Height",
-    "City & Country": "Requirements City & Country",
-    "Other details": "Requirements Other details",
+    # "City & Country": "Requirements City & Country",
+    # "Other details": "Requirements Other details",
 }
 
-ALL_FIELDS = FORM_FIELDS + list(REQUIREMENT_DUPLICATE_FIELDS.values())
+FIELD_STORAGE_KEYS = {
+    "Kya aap ke paas Divorce/Khula certificate hai?:": "divorce_certificate",
+    "Female: Kya aap First wife ki mojoodgi mei 2nd wife banney ko tayyar hain?:": "second_wife_ok",
+    "Sawal. Aap First wife ki mojoodgi mei 2nd marriage kiyun kerna chahtay hain?": "second_marriage_reason",
+    "Sawal: Ky aap ke paas 2nd marriage ke liye Govt Permission hai? ": "govt_permission",
+}
+
+
+ALL_FIELDS = [FIELD_STORAGE_KEYS.get(field, field) for field in FORM_FIELDS] + list(REQUIREMENT_DUPLICATE_FIELDS.values())
 SECTION_HEADER = "Your Requirements in Detail"
 
 
@@ -79,8 +94,12 @@ def normalize_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def get_storage_key(field):
+    return FIELD_STORAGE_KEYS.get(field, field)
+
+
 def build_key_map():
-    return {normalize_key(field): field for field in FORM_FIELDS}
+    return {normalize_key(field): get_storage_key(field) for field in FORM_FIELDS}
 
 
 def get_default_form_data():

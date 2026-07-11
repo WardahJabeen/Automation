@@ -2,11 +2,13 @@
 import json
 import re
 import sys
+from db import Database
 
 try:
     import mysql.connector
 except ImportError:
     mysql = None
+
 
 from form_fields import (
     SECTION_HEADER,
@@ -152,6 +154,7 @@ def parse_form(lines):
 
     key_map = build_key_map()
     form_data = get_default_form_data()
+    seen_keys = set()
     pending_key = None
     in_requirements = False
     last_key = None
@@ -162,17 +165,13 @@ def parse_form(lines):
         line = raw_line.rstrip("\n")
         i += 1
 
-        
-
         if not line.strip():
             continue
 
-        
-            
         # First, try to extract multiple key:value pairs that may exist on the same line
         pairs, leading = find_key_value_pairs(line, key_map)
         if pairs:
-            
+            # print(f"DEBUG: Processing line: {line}")
             # if there's leading text before the first key, treat it as continuation
             if leading and last_key is not None:
                 existing = form_data.get(last_key, "")
@@ -182,7 +181,10 @@ def parse_form(lines):
                 
 
             for k, v in pairs:
+                
+
                 if k == SECTION_HEADER:
+                    seen_keys.add(SECTION_HEADER)
                     in_requirements = True
                     if v:
                         existing = form_data.get(SECTION_HEADER, "")
@@ -196,9 +198,11 @@ def parse_form(lines):
 
                 if v is None:
                     pending_key = k
+                    seen_keys.add(k)
                     last_key = k
                     continue
 
+                seen_keys.add(k)
                 existing = form_data.get(k, "")
                 newval = sanitize_value(v)
                 if existing:
@@ -210,7 +214,8 @@ def parse_form(lines):
 
             continue
 
-        
+
+        # print(f"DEBUG 2: Processing line: {line}")
 
 
         # Fallback to single-key parsing
@@ -221,6 +226,7 @@ def parse_form(lines):
         if pending_key is not None:
             if key is None:
                 # Treat this line as the value for the pending key (append if exists)
+                seen_keys.add(pending_key)
                 existing = form_data.get(pending_key, "")
                 newval = sanitize_value(line.strip())
                 if existing:
@@ -248,6 +254,7 @@ def parse_form(lines):
 
         # Section header starts special requirements mapping
         if key == SECTION_HEADER:
+            seen_keys.add(SECTION_HEADER)
             in_requirements = True
             if value:
                 existing = form_data.get(SECTION_HEADER, "")
@@ -264,11 +271,13 @@ def parse_form(lines):
         # If value is None then the next non-empty line is the value
         if value is None:
             pending_key = key
+            seen_keys.add(key)
             last_key = key
             continue
 
 
         # Otherwise append the value to existing (to collect duplicates) and remember last key
+        seen_keys.add(key)
         existing = form_data.get(key, "")
         newval = sanitize_value(value)
         if existing:
@@ -281,8 +290,9 @@ def parse_form(lines):
     if pending_key is not None:
         form_data[pending_key] = ""
 
-     
-    return form_data
+    # print("DEBUG: Key Map:", key_map)
+
+    return form_data, seen_keys
 
 
 def field_label_to_db_column(label):
@@ -340,6 +350,7 @@ def main():
     )
     parser.add_argument("--file", "-f", help="Read the form from a file instead of stdin.")
     parser.add_argument("--json", action="store_true", help="Print parsed data as JSON.")
+    parser.add_argument("--missing-fields", action="store_true", help="Print expected fields that were not mentioned in the submitted form.")
     parser.add_argument("--mysql-host", help="MySQL host for insertion.")
     parser.add_argument("--mysql-user", help="MySQL username.")
     parser.add_argument("--mysql-password", help="MySQL password.")
@@ -348,12 +359,23 @@ def main():
     args = parser.parse_args()
 
     lines = read_input(args.file)
-    parsed = parse_form(lines)
+    parsed, seen_keys = parse_form(lines)
 
     if args.json:
         print(json.dumps(parsed, indent=2, ensure_ascii=False))
     else:
         print(parsed)
+
+    missing = [key for key in parsed.keys() if key not in seen_keys]
+    print("\nMissing expected fields:")
+    if missing:
+        for key in missing:
+            print(f"{key}, ", end="")
+    else:
+        print("(none)")
+    db = Database()
+    db.insert_form(parsed)
+    db.close()
 
     if args.mysql_table:
         if not all([args.mysql_host, args.mysql_user, args.mysql_password, args.mysql_database]):
