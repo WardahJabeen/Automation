@@ -5,6 +5,7 @@ FORM_FIELDS = [
     "Registration No",
     "Date",
     "Name",
+    "WhatsApp No",
     "Guardian Name",
     "Relationship with Guardian",
 
@@ -43,6 +44,8 @@ FORM_FIELDS = [
     "About Your Personality",
     "About Your Hobby",
     "Any other detail",
+    "Summary",
+    "Rishta Given",
 
     "About your Home: Size? Own/Rent?",
     "Your Living Standard",
@@ -76,6 +79,26 @@ FIELD_STORAGE_KEYS = {
     "Sawal: Ky aap ke paas 2nd marriage ke liye Govt Permission hai? ": "govt_permission",
 }
 
+INCOME_ALIASES = {
+    "Income": "Monthly Income",
+    "Salary": "Monthly Income",
+}
+
+PHONE_ALIASES = {
+    "Number": "WhatsApp No",
+    "Phone Number": "WhatsApp No",
+    "Phone No": "WhatsApp No",
+    "Phone No.": "WhatsApp No",
+    "Whatsapp Number": "WhatsApp No",
+    "WhatApp No": "WhatsApp No",
+    "WhatApp No.": "WhatsApp No",
+    "WhatsApp No": "WhatsApp No",
+    "WhatsApp No.": "WhatsApp No",
+    "WN": "WhatsApp No",
+    "WN Number": "WhatsApp No",
+}
+
+ARRAY_FIELDS = {"Rishta Given"}
 
 ALL_FIELDS = [FIELD_STORAGE_KEYS.get(field, field) for field in FORM_FIELDS] + list(REQUIREMENT_DUPLICATE_FIELDS.values())
 SECTION_HEADER = "Your Requirements in Detail"
@@ -99,11 +122,20 @@ def get_storage_key(field):
 
 
 def build_key_map():
-    return {normalize_key(field): get_storage_key(field) for field in FORM_FIELDS}
+    key_map = {normalize_key(field): get_storage_key(field) for field in FORM_FIELDS}
+    key_map.update({normalize_key(alias): get_storage_key(target) for alias, target in INCOME_ALIASES.items()})
+    key_map.update({normalize_key(alias): get_storage_key(target) for alias, target in PHONE_ALIASES.items()})
+    return key_map
 
 
 def get_default_form_data():
-    return {field: "" for field in ALL_FIELDS}
+    default_data = {}
+    for field in ALL_FIELDS:
+        if field in ARRAY_FIELDS:
+            default_data[field] = []
+        else:
+            default_data[field] = ""
+    return default_data
 
 
 def resolve_key(raw_key, key_map, threshold=0.75):

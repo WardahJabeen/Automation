@@ -25,6 +25,77 @@ def normalize_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def is_separator_line(line: str) -> bool:
+    stripped = line.strip()
+    return bool(stripped) and all(ch == "*" for ch in stripped)
+
+
+def split_ordered_list_items(value: str):
+    if value is None:
+        return []
+    value = value.strip()
+    if not value:
+        return []
+
+    parts = re.split(r'(?:(?<=\n)|^)\s*\d+\.\s*', value)
+    if len(parts) <= 1:
+        return [value]
+
+    items = [part.strip() for part in parts if part.strip() != ""]
+    if not items:
+        return [""]
+    return items
+
+
+def append_form_value(form_data, key, value):
+    value = clean_field_value(key, value)
+    if isinstance(form_data.get(key), list):
+        items = split_ordered_list_items(value)
+        for item in items:
+            if item != "":
+                form_data[key].append(sanitize_value(item))
+            else:
+                form_data[key].append("")
+        return
+
+    existing = form_data.get(key, "")
+    newval = sanitize_value(value)
+    if existing:
+        label = normalize_key(key)
+        form_data[key] = f"{existing}, {label}: {newval}"
+    else:
+        form_data[key] = newval
+
+
+def append_continuation(form_data, key, append):
+    if append is None or append == "":
+        return
+
+    if isinstance(form_data.get(key), list):
+        ordered_match = re.match(r'^\s*\d+\.\s*(.*)$', append)
+        if ordered_match:
+            form_data[key].append(sanitize_value(ordered_match.group(1)))
+            return
+
+        if form_data[key]:
+            form_data[key][-1] = sanitize_value(f"{form_data[key][-1]} {append}")
+        else:
+            form_data[key].append(sanitize_value(append))
+        return
+
+    existing = form_data.get(key, "")
+    combined = (existing + " " + append) if existing else append
+    form_data[key] = sanitize_value(combined)
+
+
+def clean_field_value(key, value):
+    if value is None:
+        return value
+    if key == "WhatsApp No":
+        value = re.sub(r"\s*registration\s+form\s*$", "", value, flags=re.IGNORECASE)
+    return value
+
+
 def sanitize_value(value: str) -> str:
     """Remove escaped and actual newlines from stored values and collapse whitespace."""
     if value is None:
@@ -157,12 +228,31 @@ def parse_form(lines):
     pending_key = None
     in_requirements = False
     last_key = None
+    summary_mode = False
+    summary_lines = []
 
     i = 0
     while i < len(expanded_lines):
         raw_line = expanded_lines[i]
         line = raw_line.rstrip("\n")
         i += 1
+
+        if is_separator_line(line):
+            summary_mode = True
+            continue
+
+        if summary_mode:
+            key, value = parse_line(line, key_map)
+            if key == "Rishta Given":
+                if summary_lines:
+                    form_data["Summary"] = sanitize_value(" ".join(summary_lines))
+                    seen_keys.add("Summary")
+                    summary_lines = []
+                summary_mode = False
+            else:
+                if line.strip():
+                    summary_lines.append(line.strip())
+                continue
 
         if not line.strip():
             continue
@@ -181,7 +271,6 @@ def parse_form(lines):
 
             for k, v in pairs:
                 
-
                 if k == SECTION_HEADER:
                     seen_keys.add(SECTION_HEADER)
                     in_requirements = True
@@ -202,13 +291,7 @@ def parse_form(lines):
                     continue
 
                 seen_keys.add(k)
-                existing = form_data.get(k, "")
-                newval = sanitize_value(v)
-                if existing:
-                    label = normalize_key(k)
-                    form_data[k] = f"{existing}, {label}: {newval}"
-                else:
-                    form_data[k] = newval
+                append_form_value(form_data, k, v)
                 last_key = k
 
             continue
@@ -226,13 +309,7 @@ def parse_form(lines):
             if key is None:
                 # Treat this line as the value for the pending key (append if exists)
                 seen_keys.add(pending_key)
-                existing = form_data.get(pending_key, "")
-                newval = sanitize_value(line.strip())
-                if existing:
-                    label = normalize_key(pending_key)
-                    form_data[pending_key] = f"{existing}, {label}: {newval}"
-                else:
-                    form_data[pending_key] = newval
+                append_form_value(form_data, pending_key, line.strip())
                 last_key = pending_key
                 pending_key = None
                 continue
@@ -243,12 +320,11 @@ def parse_form(lines):
 
         # If no key detected on this line, treat it as continuation of last filled key
         if key is None:
+            if last_key == "WhatsApp No" and re.fullmatch(r"\s*registration\s+form\s*", line, re.IGNORECASE):
+                continue
             if last_key is not None:
                 # append as continuation of the last key's value (store without literal newlines)
-                existing = form_data.get(last_key, "")
-                append = line.strip()
-                combined = (existing + " " + append) if existing else append
-                form_data[last_key] = sanitize_value(combined)
+                append_continuation(form_data, last_key, line.strip())
             continue
 
         # Section header starts special requirements mapping
@@ -277,17 +353,15 @@ def parse_form(lines):
 
         # Otherwise append the value to existing (to collect duplicates) and remember last key
         seen_keys.add(key)
-        existing = form_data.get(key, "")
-        newval = sanitize_value(value)
-        if existing:
-            label = normalize_key(key)
-            form_data[key] = f"{existing}, {label}: {newval}"
-        else:
-            form_data[key] = newval
+        append_form_value(form_data, key, value)
         last_key = key
 
     if pending_key is not None:
         form_data[pending_key] = ""
+
+    if summary_mode and summary_lines:
+        form_data["Summary"] = sanitize_value(" ".join(summary_lines))
+        seen_keys.add("Summary")
 
     # print("DEBUG: Key Map:", key_map)
 
