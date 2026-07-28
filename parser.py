@@ -47,8 +47,18 @@ def split_ordered_list_items(value: str):
     return items
 
 
+def extract_age_value(value):
+    if value is None:
+        return ""
+    match = re.search(r"\d+", value)
+    return match.group(0) if match else ""
+
+
 def append_form_value(form_data, key, value):
     value = clean_field_value(key, value)
+    if key == "Age":
+        value = extract_age_value(value)
+
     if isinstance(form_data.get(key), list):
         items = split_ordered_list_items(value)
         for item in items:
@@ -58,17 +68,23 @@ def append_form_value(form_data, key, value):
                 form_data[key].append("")
         return
 
-    existing = form_data.get(key, "")
     newval = sanitize_value(value)
-    if existing:
-        label = normalize_key(key)
-        form_data[key] = f"{existing}, {label}: {newval}"
-    else:
-        form_data[key] = newval
+    if isinstance(form_data.get(key), list):
+        # non-scalar list fields retain appended list items
+        existing = form_data.get(key, [])
+        if existing:
+            form_data[key].append(newval)
+        else:
+            form_data[key] = [newval]
+        return
+    form_data[key] = newval
 
 
 def append_continuation(form_data, key, append):
     if append is None or append == "":
+        return
+
+    if key == "Age":
         return
 
     if isinstance(form_data.get(key), list):
