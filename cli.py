@@ -1,5 +1,4 @@
 import json
-import re
 from db import Database
 from parser import parse_form
 
@@ -57,62 +56,9 @@ def prompt_summary_save_mode():
         print("Unknown choice. Please choose 1 or 2.")
 
 
-def parse_height_to_inches(value):
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    text = text.replace('”', '"').replace('“', '"').replace('’', "'").replace('′', "'")
-    text = text.replace('feet', 'ft').replace('foot', 'ft').replace('inches', 'in').replace('inch', 'in')
-
-    # Feet and inches formats like 5'5, 5' 5", 5 ft 5 in, 5ft 5in
-    match = re.search(r"^(\d{1,2})\s*(?:'|ft)\s*(\d{1,2})\s*(?:\"|in)?$", text)
-    if match:
-        feet = int(match.group(1))
-        inches = int(match.group(2))
-        return feet * 12 + inches
-
-    # Allow just feet values like 5 ft
-    match = re.search(r"^(\d{1,2})\s*(?:'|ft)$", text)
-    if match:
-        return int(match.group(1)) * 12
-
-    # Centimeters
-    match = re.search(r"(\d+(?:\.\d+)?)\s*cm\b", text)
-    if match:
-        cm = float(match.group(1))
-        return round(cm / 2.54, 2)
-
-    # Any pattern with feet and optional inches separated with symbols/spaces
-    match = re.search(r"(\d{1,2})\s*['’′]\s*(\d{1,2})", text)
-    if match:
-        feet = int(match.group(1))
-        inches = int(match.group(2))
-        return feet * 12 + inches
-
-    match = re.search(r"(\d{1,2})\s*ft\s*(\d{1,2})\s*in", text)
-    if match:
-        feet = int(match.group(1))
-        inches = int(match.group(2))
-        return feet * 12 + inches
-
-    return None
-
-
-def format_height_value(value):
-    height = str(value).strip()
-    inches = parse_height_to_inches(height)
-    if inches is None:
-        return height
-    if isinstance(inches, float) and not inches.is_integer():
-        return f"{height} ({inches:.2f} in)"
-    return f"{height} ({int(inches)} in)"
-
-
-def format_db_value(value, field_name=None):
+def format_db_value(value):
     if value is None:
         return ""
-    if field_name == "Height":
-        return format_height_value(value)
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     if isinstance(value, str):
@@ -145,7 +91,7 @@ def run_get_profile_flow(db):
                 return
             print("Full profile:")
             for key, value in profile.items():
-                print(f"{key}: {format_db_value(value, key)}")
+                print(f"{key}: {format_db_value(value)}")
             active_view = "full"
             break
         if answer == "2" or answer.lower() == "get summary":
@@ -184,21 +130,10 @@ def run_get_profile_flow(db):
                     return
                 print("Full profile:")
                 for key, value in profile.items():
-                    print(f"{key}: {format_db_value(value, key)}")
+                    print(f"{key}: {format_db_value(value)}")
                 active_view = "full"
             continue
         print("Unknown choice. Please choose 1 or 2.")
-
-
-def run_get_matching_flow(db):
-    phone_number = request_existing_phone(db)
-    matching = db.get_matching(phone_number)
-    if not matching:
-        print("No matching profile found for that WhatsApp No.")
-        return
-    print("Matching profile details:")
-    for key, value in matching.items():
-        print(f"{key}: {format_db_value(value, key)}")
 
 
 def run_summary_flow(db):
@@ -316,9 +251,9 @@ def run_main_loop():
         while True:
             answer = prompt_menu(
                 "Select an action:",
-                {"1": "enter new form", "2": "enter Rishta given", "3": "enter summary", "4": "get profile", "5": "get matching", "6": "done"},
+                {"1": "enter new form", "2": "enter Rishta given", "3": "enter summary", "4": "get profile", "5": "done"},
             )
-            if answer == "6" or answer.lower() == "done":
+            if answer == "5" or answer.lower() == "done":
                 break
             if answer == "2" or answer.lower() == "enter rishta given":
                 run_rishta_given_flow(db)
@@ -329,13 +264,10 @@ def run_main_loop():
             if answer == "4" or answer.lower() == "get profile":
                 run_get_profile_flow(db)
                 continue
-            if answer == "5" or answer.lower() == "get matching":
-                run_get_matching_flow(db)
-                continue
             if answer == "1" or answer.lower() == "enter new form":
                 run_new_form_flow(db)
                 continue
-            print("Unknown choice. Please choose 1, 2, 3, 4, 5, or 6.")
+            print("Unknown choice. Please choose 1, 2, 3, 4, or 5.")
     finally:
         db.close()
 

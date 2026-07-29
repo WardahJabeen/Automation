@@ -101,27 +101,6 @@ class Database:
             row = cur.fetchone()
             return row[0] if row else None
 
-    def get_matching(self, phone_number):
-        fields = [
-            "Gender",
-            "Age",
-            "Marital Status",
-            "Height",
-            "Country",
-            "Your Current City",
-            "Nationality/Visa Status",
-            "Religion",
-            "Maslak",
-            "No of Children",
-        ]
-        columns = ', '.join(f'"{field}"' for field in fields)
-        with self.conn.cursor() as cur:
-            cur.execute(f'SELECT {columns} FROM registration_forms WHERE "WhatsApp No" = %s', [phone_number])
-            row = cur.fetchone()
-            if not row:
-                return None
-            return dict(zip(fields, row))
-
     def whatsapp_no_exists(self, phone_number):
         with self.conn.cursor() as cur:
             cur.execute('SELECT 1 FROM registration_forms WHERE "WhatsApp No" = %s', [phone_number])
