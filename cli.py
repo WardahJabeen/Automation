@@ -56,6 +56,24 @@ def prompt_summary_save_mode():
         print("Unknown choice. Please choose 1 or 2.")
 
 
+def run_get_matching_flow(db):
+    # Prompt user for a phone number to look up
+    while True:
+        phone_number = input("Phone number to match (or blank to cancel): ").strip()
+        if not phone_number:
+            return
+
+        profile = db.get_profile(phone_number)
+        if not profile:
+            print("No profile found for that WhatsApp No.")
+            return
+
+        print("Matching profile:")
+        for key, val in profile.items():
+            print(f"{key}: {format_db_value(val)}")
+        return
+
+
 def format_db_value(value):
     if value is None:
         return ""
@@ -251,9 +269,9 @@ def run_main_loop():
         while True:
             answer = prompt_menu(
                 "Select an action:",
-                {"1": "enter new form", "2": "enter Rishta given", "3": "enter summary", "4": "get profile", "5": "done"},
+                {"1": "enter new form", "2": "enter Rishta given", "3": "enter summary", "4": "get profile", "5": "get matching", "6": "done"},
             )
-            if answer == "5" or answer.lower() == "done":
+            if answer == "6" or answer.lower() == "done":
                 break
             if answer == "2" or answer.lower() == "enter rishta given":
                 run_rishta_given_flow(db)
@@ -264,10 +282,13 @@ def run_main_loop():
             if answer == "4" or answer.lower() == "get profile":
                 run_get_profile_flow(db)
                 continue
+            if answer == "5" or answer.lower() == "get matching":
+                run_get_matching_flow(db)
+                continue
             if answer == "1" or answer.lower() == "enter new form":
                 run_new_form_flow(db)
                 continue
-            print("Unknown choice. Please choose 1, 2, 3, 4, or 5.")
+            print("Unknown choice. Please choose 1, 2, 3, 4, 5, or 6.")
     finally:
         db.close()
 

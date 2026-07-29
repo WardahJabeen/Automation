@@ -106,5 +106,30 @@ class Database:
             cur.execute('SELECT 1 FROM registration_forms WHERE "WhatsApp No" = %s', [phone_number])
             return cur.fetchone() is not None
 
+    def get_matching(self, field_label, value):
+        """Return list of rows (as dicts) where column `field_label` ILIKE the given value.
+
+        `field_label` must be a simple column label (letters, numbers, spaces, underscore, dash, parens).
+        """
+        import re
+
+        if not field_label or not isinstance(field_label, str):
+            raise ValueError("field_label must be a non-empty string")
+
+        # simple whitelist to avoid SQL injection via column name
+        if not re.match(r'^[A-Za-z0-9 _\-\(\)]+$', field_label):
+            raise ValueError("Invalid field label")
+
+        pattern = f"%{value}%" if value is not None else "%"
+        query = f'SELECT * FROM registration_forms WHERE "{field_label}" ILIKE %s'
+
+        with self.conn.cursor() as cur:
+            cur.execute(query, [pattern])
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+
     def close(self):
         self.conn.close()
