@@ -1,4 +1,5 @@
 import json
+import re
 from db import Database
 from parser import parse_form
 
@@ -57,7 +58,7 @@ def prompt_summary_save_mode():
 
 
 def run_get_matching_flow(db):
-    # Prompt user for a phone number to look up
+    # Prompt user for a phone number to look up and show opposite-gender matches.
     while True:
         phone_number = input("Phone number to match (or blank to cancel): ").strip()
         if not phone_number:
@@ -68,9 +69,21 @@ def run_get_matching_flow(db):
             print("No profile found for that WhatsApp No.")
             return
 
-        print("Matching profile:")
-        for key, val in profile.items():
-            print(f"{key}: {format_db_value(val)}")
+        gender_value = profile.get("Gender") or profile.get("gender") or ""
+        opposite_gender_synonyms = get_opposite_gender_synonyms(gender_value)
+        if not opposite_gender_synonyms:
+            print(f"Could not determine opposite gender for '{gender_value}'.")
+            return
+
+        matches = db.get_profiles_by_gender_synonyms(opposite_gender_synonyms, exclude_phone=phone_number)
+        if not matches:
+            print("No opposite-gender matches found.")
+            return
+
+        print(f"Found {len(matches)} opposite-gender match(es):")
+        for idx, match_profile in enumerate(matches, start=1):
+            print(f"--- Match {idx} ---")
+            print(format_db_value(match_profile.get("Summary")))
         return
 
 
@@ -89,6 +102,49 @@ def format_db_value(value):
             except Exception:
                 pass
     return str(value)
+
+
+def normalize_gender(text):
+    if not text:
+        return ""
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    female_terms = {
+        "female", "woman", "women", "girl", "girls", "daughter", "mother", "sister", "wife", "mrs", "miss", "ms", "f",
+    }
+    male_terms = {
+        "male", "man", "men", "boy", "boys", "son", "father", "brother", "husband", "mr", "m",
+    }
+
+    parts = text.split()
+    for part in parts:
+        if part in female_terms:
+            return "female"
+        if part in male_terms:
+            return "male"
+
+    # fallback exact tokens
+    if text in female_terms:
+        return "female"
+    if text in male_terms:
+        return "male"
+    if "female" in text or "woman" in text or "girl" in text or "daughter" in text or "mother" in text or "sister" in text:
+        return "female"
+    if "male" in text or "man" in text or "boy" in text or "son" in text or "father" in text or "brother" in text:
+        return "male"
+
+    return ""
+
+
+def get_opposite_gender_synonyms(gender_value):
+    gender = normalize_gender(gender_value)
+    if gender == "female":
+        return ["male", "man", "men", "boy", "boys", "son", "father", "brother", "husband", "mr", "m"]
+    if gender == "male":
+        return ["female", "woman", "women", "girl", "girls", "daughter", "mother", "sister", "wife", "mrs", "miss", "ms", "f"]
+    return []
 
 
 def run_get_profile_flow(db):

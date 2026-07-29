@@ -50,25 +50,27 @@ def split_ordered_list_items(value: str):
 def append_form_value(form_data, key, value):
     value = clean_field_value(key, value)
     if isinstance(form_data.get(key), list):
+        if form_data[key]:
+            return
         items = split_ordered_list_items(value)
-        for item in items:
-            if item != "":
-                form_data[key].append(sanitize_value(item))
-            else:
-                form_data[key].append("")
+        form_data[key] = [sanitize_value(item) if item != "" else "" for item in items]
         return
 
     existing = form_data.get(key, "")
-    newval = sanitize_value(value)
     if existing:
-        label = normalize_key(key)
-        form_data[key] = f"{existing}, {label}: {newval}"
-    else:
-        form_data[key] = newval
+        return
+    form_data[key] = sanitize_value(value)
 
 
 def append_continuation(form_data, key, append):
     if append is None or append == "":
+        return
+
+    if key == "Age":
+        if form_data.get(key):
+            return
+        age_value = extract_age_value(append)
+        form_data[key] = age_value
         return
 
     if isinstance(form_data.get(key), list):
@@ -88,11 +90,22 @@ def append_continuation(form_data, key, append):
     form_data[key] = sanitize_value(combined)
 
 
+def extract_age_value(value: str) -> str:
+    if value is None:
+        return ""
+    match = re.search(r"\d{1,3}", value)
+    if match:
+        return match.group(0)
+    return sanitize_value(value)
+
+
 def clean_field_value(key, value):
     if value is None:
         return value
     if key == "WhatsApp No":
         value = re.sub(r"\s*registration\s+form\s*$", "", value, flags=re.IGNORECASE)
+    if key == "Age":
+        return extract_age_value(value)
     return value
 
 
@@ -274,10 +287,8 @@ def parse_form(lines):
                 if k == SECTION_HEADER:
                     seen_keys.add(SECTION_HEADER)
                     in_requirements = True
-                    if v:
-                        existing = form_data.get(SECTION_HEADER, "")
-                        newval = sanitize_value(v)
-                        form_data[SECTION_HEADER] = (existing + " " + newval) if existing else newval
+                    if v and not form_data.get(SECTION_HEADER):
+                        form_data[SECTION_HEADER] = sanitize_value(v)
                         last_key = SECTION_HEADER
                     continue
 
@@ -331,10 +342,8 @@ def parse_form(lines):
         if key == SECTION_HEADER:
             seen_keys.add(SECTION_HEADER)
             in_requirements = True
-            if value:
-                existing = form_data.get(SECTION_HEADER, "")
-                newval = sanitize_value(value)
-                form_data[SECTION_HEADER] = (existing + " " + newval) if existing else newval
+            if value and not form_data.get(SECTION_HEADER):
+                form_data[SECTION_HEADER] = sanitize_value(value)
                 last_key = SECTION_HEADER
             continue
 

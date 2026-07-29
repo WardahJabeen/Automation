@@ -131,5 +131,28 @@ class Database:
             cols = [desc[0] for desc in cur.description]
             return [dict(zip(cols, row)) for row in rows]
 
+    def get_profiles_by_gender_synonyms(self, gender_synonyms, exclude_phone=None):
+        if not gender_synonyms:
+            return []
+
+        conditions = []
+        params = []
+        for synonym in gender_synonyms:
+            conditions.append('lower("Gender") LIKE %s')
+            params.append(f"%{synonym}%")
+
+        query = f'SELECT * FROM registration_forms WHERE {" OR ".join(conditions)}'
+        if exclude_phone:
+            query += ' AND "WhatsApp No" != %s'
+            params.append(exclude_phone)
+
+        with self.conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+
     def close(self):
         self.conn.close()
