@@ -75,7 +75,17 @@ def run_get_matching_flow(db):
             print(f"Could not determine opposite gender for '{gender_value}'.")
             return
 
-        matches = db.get_profiles_by_gender_synonyms(opposite_gender_synonyms, exclude_phone=phone_number)
+        marital_value = profile.get("Marital Status") or profile.get("marital status") or ""
+        marital_status_synonyms = get_matching_marital_status_synonyms(marital_value)
+        if not marital_status_synonyms:
+            print(f"Could not determine marital status for '{marital_value}'.")
+            return
+
+        matches = db.get_profiles_by_gender_and_marital_status(
+            opposite_gender_synonyms,
+            marital_status_synonyms,
+            exclude_phone=phone_number,
+        )
         if not matches:
             print("No opposite-gender matches found.")
             return
@@ -144,6 +154,44 @@ def get_opposite_gender_synonyms(gender_value):
         return ["male", "man", "men", "boy", "boys", "son", "father", "brother", "husband", "mr", "m"]
     if gender == "male":
         return ["female", "woman", "women", "girl", "girls", "daughter", "mother", "sister", "wife", "mrs", "miss", "ms", "f"]
+    return []
+
+
+def normalize_marital_status(text):
+    if not text:
+        return ""
+
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    single_terms = {
+        "single", "unmarried", "un-married", "never married", "nevermarried", "not married", "notmarried",
+    }
+    married_terms = {
+        "married", "taken", "divorced", "widowed", "divorce", "widow", "kids", "children", "separated",
+    }
+
+    parts = text.split()
+
+    print("text in normalized status" + text)
+    if text in single_terms:
+        return "single"
+    if text in married_terms:
+        return "married"
+    if re.search(r"\b(?:single|unmarried|un married|never married|nevermarried|not married|notmarried)\b", text):
+        return "single"
+    if re.search(r"\b(?:married|taken|divorced|widowed|divorce|widow|kids|children|separated)\b", text):
+        return "married"
+    return ""
+
+
+def get_matching_marital_status_synonyms(status_value):
+    status = normalize_marital_status(status_value)
+    if status == "single":
+        return ["single", "un-married", "unmarried", "never married", "nevermarried"]
+    if status == "married":
+        return ["married", "taken", "divorced", "widowed", "divorce", "widow", "kids", "children", "separated"]
     return []
 
 

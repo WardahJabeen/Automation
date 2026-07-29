@@ -1,4 +1,5 @@
 import json
+import re
 import psycopg
 
 class Database:
@@ -135,13 +136,49 @@ class Database:
         if not gender_synonyms:
             return []
 
+        normalized_synonyms = [re.sub(r'[^a-z0-9]+', '', s.lower()) for s in gender_synonyms]
         conditions = []
         params = []
-        for synonym in gender_synonyms:
-            conditions.append('lower("Gender") LIKE %s')
-            params.append(f"%{synonym}%")
+        for synonym in normalized_synonyms:
+            conditions.append("regexp_replace(lower(\"Gender\"), '[^a-z0-9]+', '', 'g') = %s")
+            params.append(synonym)
 
-        query = f'SELECT * FROM registration_forms WHERE {" OR ".join(conditions)}'
+        query = f"SELECT * FROM registration_forms WHERE {' OR '.join(conditions)}"
+        if exclude_phone:
+            query += ' AND "WhatsApp No" != %s'
+            params.append(exclude_phone)
+
+        with self.conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, row)) for row in rows]
+
+    def get_profiles_by_gender_and_marital_status(self, gender_synonyms, marital_status_synonyms, exclude_phone=None):
+        if not gender_synonyms or not marital_status_synonyms:
+            return []
+
+        normalized_gender = [re.sub(r'[^a-z0-9]+', '', s.lower()) for s in gender_synonyms]
+        normalized_status = [re.sub(r'[^a-z0-9]+', '', s.lower()) for s in marital_status_synonyms]
+
+        gender_conditions = []
+        status_conditions = []
+        params = []
+
+        for synonym in normalized_gender:
+            gender_conditions.append("regexp_replace(lower(\"Gender\"), '[^a-z0-9]+', '', 'g') = %s")
+            params.append(synonym)
+
+        for synonym in normalized_status:
+            status_conditions.append("regexp_replace(lower(\"Marital Status\"), '[^a-z0-9]+', '', 'g') = %s")
+            params.append(synonym)
+
+        query = (
+            f"SELECT * FROM registration_forms WHERE ({' OR '.join(gender_conditions)})"
+            f" AND ({' OR '.join(status_conditions)})"
+        )
         if exclude_phone:
             query += ' AND "WhatsApp No" != %s'
             params.append(exclude_phone)
