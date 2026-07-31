@@ -12,9 +12,8 @@ def prompt_menu(prompt, options):
 
 
 def read_multiline_form():
-    print("Paste the whole form text. Enter an empty line twice or a single '.' on its own line to finish.")
+    print("Paste the whole form text. Enter a single '.' on its own line to finish.")
     lines = []
-    blank_line_seen = False
     while True:
         try:
             line = input()
@@ -22,12 +21,6 @@ def read_multiline_form():
             break
         if line.strip() == ".":
             break
-        if line == "":
-            if blank_line_seen:
-                break
-            blank_line_seen = True
-            continue
-        blank_line_seen = False
         lines.append(line + "\n")
     return lines
 
@@ -38,6 +31,17 @@ def request_existing_phone(db):
         if not phone_number:
             print("Phone number cannot be empty.")
             continue
+        if not db.whatsapp_no_exists(phone_number):
+            print("Phone number not found in table. Please enter an existing WhatsApp No.")
+            continue
+        return phone_number
+
+
+def request_phone_or_cancel(db, prompt_text="Phone number of candidate (or blank to cancel): "):
+    while True:
+        phone_number = input(prompt_text).strip()
+        if not phone_number:
+            return None
         if not db.whatsapp_no_exists(phone_number):
             print("Phone number not found in table. Please enter an existing WhatsApp No.")
             continue
@@ -57,10 +61,134 @@ def prompt_summary_save_mode():
         print("Unknown choice. Please choose 1 or 2.")
 
 
+def parse_height(value):
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+
+    # normalize common height notation
+    text = text.replace('”', '"').replace('“', '"').replace('’', "'").replace('‘', "'")
+
+    cm_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*cm\b', text)
+    if cm_match:
+        return float(cm_match.group(1))
+
+    m_match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*m\b', text)
+    if m_match and 'cm' not in text:
+        meters = float(m_match.group(1))
+        return meters * 100
+
+    feet_inches = re.search(r'([0-9]+)\s*(?:ft|feet|foot)\s*(?:([0-9]+)\s*(?:in|inch|inches)?)?', text)
+    if feet_inches:
+        feet = float(feet_inches.group(1))
+        inches = float(feet_inches.group(2) or 0)
+        return feet * 30.48 + inches * 2.54
+
+    feet_inch = re.search(r"([0-9]+)\s*'\s*([0-9]+)\s*(?:\"|in|inch|inches)?", text)
+    if feet_inch:
+        feet = float(feet_inch.group(1))
+        inches = float(feet_inch.group(2))
+        return feet * 30.48 + inches * 2.54
+
+    decimal_feet = re.search(r'\b([4-7](?:\.[0-9]+)?)\b', text)
+    if decimal_feet and ('ft' in text or 'feet' in text or 'foot' in text or '.' in decimal_feet.group(1)):
+        feet = float(decimal_feet.group(1))
+        return feet * 30.48
+
+    number = re.search(r'\b([0-9]+(?:\.[0-9]+)?)\b', text)
+    if number:
+        value_num = float(number.group(1))
+        if 100 <= value_num <= 250:
+            return value_num
+        if 4 <= value_num <= 8:
+            return value_num * 30.48
+        if 50 <= value_num <= 90:
+            return value_num * 2.54
+
+    return None
+
+
+def normalize_country(text):
+    if not text:
+        return ""
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9 ]+', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    if 'pakistan' in text:
+        return 'pakistan'
+    return text
+
+
+def parse_age(value):
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+
+    age_match = re.search(r'(\d{1,3})', text)
+    if not age_match:
+        return None
+
+    age = int(age_match.group(1))
+    if 10 <= age <= 120:
+        return age
+    return None
+
+
+def get_age_range_index(age):
+    if age is None:
+        return None
+    if 18 <= age <= 24:
+        return 0
+    if 25 <= age <= 28:
+        return 1
+    if 29 <= age <= 32:
+        return 2
+    if 33 <= age <= 36:
+        return 3
+    if 37 <= age <= 40:
+        return 4
+    if 41 <= age <= 75:
+        return 5
+    return None
+
+
+def get_age_match_category(candidate_gender, candidate_age_range, match_gender, match_age_range):
+    if candidate_age_range is None or match_age_range is None:
+        return 3
+    if candidate_gender not in {"male", "female"} or match_gender not in {"male", "female"}:
+        return 3
+
+    if candidate_gender == "male":
+        male_age_range = candidate_age_range
+        female_age_range = match_age_range
+    else:
+        male_age_range = match_age_range
+        female_age_range = candidate_age_range
+
+    if male_age_range == female_age_range + 1:
+        return 0
+    if female_age_range == male_age_range + 1:
+        return 1
+    if male_age_range == female_age_range:
+        return 2
+    return 3
+
+
+def country_priority(country, candidate_country):
+    normalized = normalize_country(country)
+    if candidate_country == "pakistan":
+        return 0 if normalized == "pakistan" else 1
+    return 0 if normalized != "pakistan" else 1
+
+
 def run_get_matching_flow(db):
     # Prompt user for a phone number to look up and show opposite-gender matches.
     while True:
-        phone_number = input("Phone number to match (or blank to cancel): ").strip()
+        phone_number = input("Phone number of candidate (or blank to cancel): ").strip()
         if not phone_number:
             return
 
@@ -81,6 +209,14 @@ def run_get_matching_flow(db):
             print(f"Could not determine marital status for '{marital_value}'.")
             return
 
+        candidate_height = parse_height(profile.get("Height") or profile.get("height") or "")
+        if candidate_height is None:
+            print("Could not determine height for the selected profile.")
+            return
+
+        candidate_age = parse_age(profile.get("Age") or profile.get("age") or "")
+        candidate_age_range = get_age_range_index(candidate_age)
+
         matches = db.get_profiles_by_gender_and_marital_status(
             opposite_gender_synonyms,
             marital_status_synonyms,
@@ -90,11 +226,71 @@ def run_get_matching_flow(db):
             print("No opposite-gender matches found.")
             return
 
-        print(f"Found {len(matches)} opposite-gender match(es):")
-        for idx, match_profile in enumerate(matches, start=1):
-            print(f"--- Match {idx} ---")
-            print(format_db_value(match_profile.get("Summary")))
+        filtered_matches = []
+        candidate_gender = normalize_gender(gender_value)
+        for match_profile in matches:
+            match_gender = normalize_gender(match_profile.get("Gender") or match_profile.get("gender") or "")
+            match_height = parse_height(match_profile.get("Height") or match_profile.get("height") or "")
+            if match_height is None:
+                continue
+
+            if candidate_gender == "male" and match_gender == "female":
+                if candidate_height >= match_height:
+                    filtered_matches.append(match_profile)
+            elif candidate_gender == "female" and match_gender == "male":
+                if match_height >= candidate_height:
+                    filtered_matches.append(match_profile)
+            else:
+                filtered_matches.append(match_profile)
+
+        if not filtered_matches:
+            print("No height-compatible opposite-gender matches found.")
+            return
+
+        candidate_country = normalize_country(profile.get("Country") or profile.get("country") or "")
+
+        match_items = []
+        for match_profile in filtered_matches:
+            match_gender = normalize_gender(match_profile.get("Gender") or match_profile.get("gender") or "")
+            match_age = parse_age(match_profile.get("Age") or match_profile.get("age") or "")
+            match_age_range = get_age_range_index(match_age)
+            category = get_age_match_category(
+                candidate_gender,
+                candidate_age_range,
+                match_gender,
+                match_age_range,
+            )
+            priority = country_priority(match_profile.get("Country") or match_profile.get("country") or "", candidate_country)
+            match_items.append((category, priority, match_profile))
+
+        match_items.sort(key=lambda item: (item[0], item[1]))
+        ordered_matches = [item[2] for item in match_items]
+
+        print(f"Found {len(ordered_matches)} opposite-gender match(es) after height filtering:")
+        show_matches_paginated(ordered_matches)
         return
+
+
+def show_matches_paginated(matches, page_size=10):
+    total = len(matches)
+    page_start = 0
+    while page_start < total:
+        page_end = min(page_start + page_size, total)
+        for idx in range(page_start, page_end):
+            print(f"--- Match {idx + 1} ---")
+            print(format_db_value(matches[idx].get("Summary")))
+
+        if page_end >= total:
+            return
+
+        while True:
+            answer = input("Show next 10 matches or done? (next/done): ").strip().lower()
+            if answer in {"next", "n"}:
+                break
+            if answer in {"done", "d"}:
+                return
+            print("Unknown choice. Please type 'next' or 'done'.")
+        page_start = page_end
 
 
 def format_db_value(value):
@@ -260,36 +456,22 @@ def run_get_profile_flow(db):
 
 def run_summary_flow(db):
     while True:
-        answer = prompt_menu(
-            "Select an action:",
-            {"1": "enter the phone number", "2": "done"},
-        )
-        if answer == "2" or answer.lower() == "done":
+        phone_number = request_phone_or_cancel(db)
+        if not phone_number:
             return
-        if answer == "1" or answer.lower() == "enter the phone number":
-            phone_number = request_existing_phone(db)
-            while True:
-                answer = prompt_menu(
-                    "Select an action:",
-                    {"1": "enter summary details", "2": "done"},
-                )
-                if answer == "2" or answer.lower() == "done":
-                    return
-                if answer == "1" or answer.lower() == "enter summary details":
-                    summary_text = input("Summary: ").strip()
-                    if summary_text:
-                        append = prompt_summary_save_mode()
-                        db.save_summary(phone_number, summary_text, append=append)
-                        print(f"Summary {'appended' if append else 'overwritten'} for {phone_number}.")
-                    else:
-                        print("Summary cannot be empty.")
-                    return
-                print("Unknown choice. Please choose 1 or 2.")
-        else:
-            print("Unknown choice. Please choose 1 or 2.")
+
+        while True:
+            summary_text = input("Summar2 detail (or blank to cancel): ").strip()
+            if not summary_text:
+                return
+            append = prompt_summary_save_mode()
+            db.save_summary(phone_number, summary_text, append=append)
+            print(f"Summary {'appended' if append else 'overwritten'} for {phone_number}.")
+            return
 
 
 def run_new_form_flow(db):
+    print("Enter the new form details.")
     lines = read_multiline_form()
     if not lines:
         print("No form text entered.")
@@ -331,40 +513,21 @@ def run_new_form_flow(db):
 
 
 def run_rishta_given_flow(db):
+    phone_number = request_phone_or_cancel(db)
+    if not phone_number:
+        return
+
+    entered_any = False
     while True:
-        answer = prompt_menu(
-            "Select an action:",
-            {"1": "enter the phone number", "2": "cancel"},
-        )
-        if answer == "2" or answer.lower() == "cancel":
-            return
-        if answer == "1" or answer.lower() == "enter the phone number":
-            phone_number = request_existing_phone(db)
+        detail = input("Rishta detail (or blank to cancel): ").strip()
+        if not detail:
+            break
+        db.append_rishta_given(phone_number, [detail])
+        print(f"Added Rishta Given item for {phone_number}.")
+        entered_any = True
 
-            entered_any = False
-            while True:
-                answer = prompt_menu(
-                    "Select an action:",
-                    {"1": "enter the rishta detail", "2": "done"},
-                )
-                if answer == "2" or answer.lower() == "done":
-                    break
-                if answer == "1" or answer.lower() == "enter the rishta detail":
-                    detail = input("Rishta detail: ").strip()
-                    if detail:
-                        db.append_rishta_given(phone_number, [detail])
-                        print(f"Added Rishta Given item for {phone_number}.")
-                        entered_any = True
-                    else:
-                        print("Detail cannot be empty.")
-                    continue
-                print("Unknown choice. Please choose 1 or 2.")
-
-            if not entered_any:
-                print("No Rishta Given items were entered.")
-            return
-
-        print("Unknown choice. Please choose 1 or 2.")
+    if not entered_any:
+        print("No Rishta Given items were entered.")
 
 
 def run_main_loop():
