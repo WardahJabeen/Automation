@@ -3,16 +3,24 @@ import re
 from db import Database
 from parser import parse_form
 
+COLOR_BLUE = "\033[38;5;75m"
+COLOR_GREEN = "\033[92m"
+COLOR_RED = "\033[91m"
+COLOR_BEIGE = "\033[38;5;223m"
+COLOR_RESET = "\033[0m"
+
+
+
 
 def prompt_menu(prompt, options):
-    print(prompt)
+    print(f"{COLOR_BEIGE}{prompt}{COLOR_RESET}")
     for num, text in options.items():
-        print(f"{num}. {text}")
-    return input().strip()
+        print(f"{COLOR_BEIGE}{num}. {text}{COLOR_RESET}")
+    return input("> ").strip()
 
 
 def read_multiline_form():
-    print("Paste the whole form text. Enter a single '.' on its own line to finish.")
+    print(f"{COLOR_BLUE}Paste the whole form text. Enter a single '.' on its own line to finish.{COLOR_RESET}")
     lines = []
     while True:
         try:
@@ -27,23 +35,23 @@ def read_multiline_form():
 
 def request_existing_phone(db):
     while True:
-        phone_number = input("Phone number: ").strip()
+        phone_number = input(f"{COLOR_BLUE}Phone number: {COLOR_RESET}").strip()
         if not phone_number:
             print("Phone number cannot be empty.")
             continue
         if not db.whatsapp_no_exists(phone_number):
-            print("Phone number not found in table. Please enter an existing WhatsApp No.")
+            print(f"\033[91mPhone number not found in table. Please enter an existing WhatsApp No.\033[0m")
             continue
         return phone_number
 
 
 def request_phone_or_cancel(db, prompt_text="Phone number of candidate (or blank to cancel): "):
     while True:
-        phone_number = input(prompt_text).strip()
+        phone_number = input(f"{COLOR_BLUE}{prompt_text}{COLOR_RESET}").strip()
         if not phone_number:
             return None
         if not db.whatsapp_no_exists(phone_number):
-            print("Phone number not found in table. Please enter an existing WhatsApp No.")
+            print(f"\033[91mPhone number not found in table. Please enter an existing WhatsApp No.\033[0m")
             continue
         return phone_number
 
@@ -86,7 +94,7 @@ def parse_height(value):
         inches = float(feet_inches.group(2) or 0)
         return feet * 30.48 + inches * 2.54
 
-    feet_inch = re.search(r"([0-9]+)\s*'\s*([0-9]+)\s*(?:\"|in|inch|inches)?", text)
+    feet_inch = re.search(r"([0-9]+)\s*['\- ]\s*([0-9]+)\s*(?:\"|in|inch|inches)?", text)
     if feet_inch:
         feet = float(feet_inch.group(1))
         inches = float(feet_inch.group(2))
@@ -180,6 +188,8 @@ def get_age_match_category(candidate_gender, candidate_age_range, match_gender, 
 
 def country_priority(country, candidate_country):
     normalized = normalize_country(country)
+    if not candidate_country:
+        return 0
     if candidate_country == "pakistan":
         return 0 if normalized == "pakistan" else 1
     return 0 if normalized != "pakistan" else 1
@@ -188,7 +198,7 @@ def country_priority(country, candidate_country):
 def run_get_matching_flow(db):
     # Prompt user for a phone number to look up and show opposite-gender matches.
     while True:
-        phone_number = input("Phone number of candidate (or blank to cancel): ").strip()
+        phone_number = input(f"{COLOR_BLUE}Phone number of candidate (or blank to cancel): {COLOR_RESET}").strip()
         if not phone_number:
             return
 
@@ -204,22 +214,15 @@ def run_get_matching_flow(db):
             return
 
         marital_value = profile.get("Marital Status") or profile.get("marital status") or ""
-        marital_status_synonyms = get_matching_marital_status_synonyms(marital_value)
-        if not marital_status_synonyms:
-            print(f"Could not determine marital status for '{marital_value}'.")
-            return
+        candidate_status = normalize_marital_status(marital_value)
 
         candidate_height = parse_height(profile.get("Height") or profile.get("height") or "")
-        if candidate_height is None:
-            print("Could not determine height for the selected profile.")
-            return
 
         candidate_age = parse_age(profile.get("Age") or profile.get("age") or "")
         candidate_age_range = get_age_range_index(candidate_age)
 
-        matches = db.get_profiles_by_gender_and_marital_status(
+        matches = db.get_profiles_by_gender_synonyms(
             opposite_gender_synonyms,
-            marital_status_synonyms,
             exclude_phone=phone_number,
         )
         if not matches:
@@ -231,17 +234,28 @@ def run_get_matching_flow(db):
         for match_profile in matches:
             match_gender = normalize_gender(match_profile.get("Gender") or match_profile.get("gender") or "")
             match_height = parse_height(match_profile.get("Height") or match_profile.get("height") or "")
-            if match_height is None:
-                continue
+
+            match_status = normalize_marital_status(match_profile.get("Marital Status") or match_profile.get("marital status") or "")
+            marital_priority = 0 if candidate_status and match_status == candidate_status else 0 if not candidate_status else 1
 
             if candidate_gender == "male" and match_gender == "female":
-                if candidate_height >= match_height:
-                    filtered_matches.append(match_profile)
+                if candidate_height is None:
+                    height_priority = 0
+                elif match_height is None:
+                    height_priority = 1
+                else:
+                    height_priority = 0 if candidate_height >= match_height else 1
             elif candidate_gender == "female" and match_gender == "male":
-                if match_height >= candidate_height:
-                    filtered_matches.append(match_profile)
+                if candidate_height is None:
+                    height_priority = 0
+                elif match_height is None:
+                    height_priority = 1
+                else:
+                    height_priority = 0 if match_height >= candidate_height else 1
             else:
-                filtered_matches.append(match_profile)
+                height_priority = 0
+
+            filtered_matches.append((match_profile, marital_priority, height_priority))
 
         if not filtered_matches:
             print("No height-compatible opposite-gender matches found.")
@@ -250,7 +264,7 @@ def run_get_matching_flow(db):
         candidate_country = normalize_country(profile.get("Country") or profile.get("country") or "")
 
         match_items = []
-        for match_profile in filtered_matches:
+        for match_profile, marital_priority, height_priority in filtered_matches:
             match_gender = normalize_gender(match_profile.get("Gender") or match_profile.get("gender") or "")
             match_age = parse_age(match_profile.get("Age") or match_profile.get("age") or "")
             match_age_range = get_age_range_index(match_age)
@@ -261,30 +275,30 @@ def run_get_matching_flow(db):
                 match_age_range,
             )
             priority = country_priority(match_profile.get("Country") or match_profile.get("country") or "", candidate_country)
-            match_items.append((category, priority, match_profile))
+            match_items.append((category, marital_priority, height_priority, priority, match_profile))
 
-        match_items.sort(key=lambda item: (item[0], item[1]))
-        ordered_matches = [item[2] for item in match_items]
+        match_items.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+        ordered_matches = [item[4] for item in match_items]
 
-        print(f"Found {len(ordered_matches)} opposite-gender match(es) after height filtering:")
+        print(f"{COLOR_GREEN}Found {len(ordered_matches)} opposite-gender match(es) after height filtering:{COLOR_RESET}")
         show_matches_paginated(ordered_matches)
         return
 
 
-def show_matches_paginated(matches, page_size=10):
+def show_matches_paginated(matches, page_size=5):
     total = len(matches)
     page_start = 0
     while page_start < total:
         page_end = min(page_start + page_size, total)
         for idx in range(page_start, page_end):
-            print(f"--- Match {idx + 1} ---")
-            print(format_db_value(matches[idx].get("Summary")))
+            print(f"{COLOR_BLUE}--- Match {idx + 1} ---{COLOR_RESET}")
+            print(f"{COLOR_GREEN}{format_db_value(matches[idx].get('Summary'))}{COLOR_RESET}")
 
         if page_end >= total:
             return
 
         while True:
-            answer = input("Show next 10 matches or done? (next/done): ").strip().lower()
+            answer = input(f"{COLOR_BLUE}Show next 5 matches or done? (next/done): {COLOR_RESET}").strip().lower()
             if answer in {"next", "n"}:
                 break
             if answer in {"done", "d"}:
@@ -392,7 +406,9 @@ def get_matching_marital_status_synonyms(status_value):
 
 
 def run_get_profile_flow(db):
-    phone_number = request_existing_phone(db)
+    phone_number = request_phone_or_cancel(db)
+    if not phone_number:
+        return
     active_view = None
 
     while True:
@@ -407,9 +423,9 @@ def run_get_profile_flow(db):
             if not profile:
                 print("No profile found for that WhatsApp No.")
                 return
-            print("Full profile:")
+            print(f"{COLOR_GREEN}Full profile:{COLOR_RESET}")
             for key, value in profile.items():
-                print(f"{key}: {format_db_value(value)}")
+                print(f"{COLOR_GREEN}{key}: {format_db_value(value)}{COLOR_RESET}")
             active_view = "full"
             break
         if answer == "2" or answer.lower() == "get summary":
@@ -417,8 +433,8 @@ def run_get_profile_flow(db):
             if summary is None or summary == "":
                 print("No summary found for that WhatsApp No.")
             else:
-                print("Summary:")
-                print(summary)
+                print(f"{COLOR_GREEN}Summary:{COLOR_RESET}")
+                print(f"{COLOR_GREEN}{summary}{COLOR_RESET}")
             active_view = "summary"
             break
         print("Unknown choice. Please choose 1, 2, or 3.")
@@ -427,7 +443,7 @@ def run_get_profile_flow(db):
         other_action = "get summary" if active_view == "full" else "get full profile"
         shown_message = "Full profile has been shown above." if active_view == "full" else "Summary has been shown above."
         answer = prompt_menu(
-            f"{shown_message}\nSelect an action:",
+            f"Select an action:",
             {"1": "done", "2": other_action},
         )
         if answer == "1" or answer.lower() == "done":
@@ -438,17 +454,17 @@ def run_get_profile_flow(db):
                 if summary is None or summary == "":
                     print("No summary found for that WhatsApp No.")
                 else:
-                    print("Summary:")
-                    print(summary)
+                    print(f"{COLOR_GREEN}Summary:{COLOR_RESET}")
+                    print(f"{COLOR_GREEN}{summary}{COLOR_RESET}")
                 active_view = "summary"
             else:
                 profile = db.get_profile(phone_number)
                 if not profile:
                     print("No profile found for that WhatsApp No.")
                     return
-                print("Full profile:")
+                print(f"{COLOR_GREEN}Full profile:{COLOR_RESET}")
                 for key, value in profile.items():
-                    print(f"{key}: {format_db_value(value)}")
+                    print(f"{COLOR_GREEN}{key}: {format_db_value(value)}{COLOR_RESET}")
                 active_view = "full"
             continue
         print("Unknown choice. Please choose 1 or 2.")
@@ -461,30 +477,35 @@ def run_summary_flow(db):
             return
 
         while True:
-            summary_text = input("Summar2 detail (or blank to cancel): ").strip()
+            summary_text = input(f"{COLOR_BLUE}Summary detail (or blank to cancel): {COLOR_RESET}").strip()
             if not summary_text:
                 return
             append = prompt_summary_save_mode()
             db.save_summary(phone_number, summary_text, append=append)
-            print(f"Summary {'appended' if append else 'overwritten'} for {phone_number}.")
+            print(f"{COLOR_GREEN}Summary {COLOR_GREEN} {'appended' if append else 'overwritten'} for {phone_number}.{COLOR_RESET}")
             return
 
 
 def run_new_form_flow(db):
-    print("Enter the new form details.")
+    print(f"{COLOR_BLUE}Enter the new form details.{COLOR_RESET}")
     lines = read_multiline_form()
     if not lines:
-        print("No form text entered.")
+        print(f"{COLOR_RED}No form text entered.{COLOR_RESET}")
         return
 
     parsed, _ = parse_form(lines)
+    gender_value = parsed.get("Gender") or parsed.get("gender") or ""
+    if not normalize_gender(gender_value):
+        print(f"{COLOR_RED}Gender is required in the form and must be a valid male/female value.{COLOR_RESET}")
+        return
+
     whatsapp_no = parsed.get("WhatsApp No")
     if whatsapp_no and db.whatsapp_no_exists(whatsapp_no):
-        print(f"A form with {whatsapp_no} number already exists in the table.")
+        print(f"{COLOR_RED}A form with {whatsapp_no} number already exists in the table.{COLOR_RESET}")
         return
     try:
         db.insert_form(parsed)
-        print("Form inserted successfully.")
+        print(f"{COLOR_GREEN}Form inserted successfully.{COLOR_RESET}")
     except Exception as exc:
         print(f"Failed to insert form: {exc}")
         return
@@ -497,7 +518,7 @@ def run_new_form_flow(db):
         if answer == "2" or answer.lower() == "done":
             break
         if answer == "1" or answer.lower() == "enter summary":
-            summary_text = input("Summary: ").strip()
+            summary_text = input(f"{COLOR_BLUE}Summary: {COLOR_RESET}").strip()
             if summary_text:
                 phone_number = parsed.get("WhatsApp No")
                 if not phone_number:
@@ -505,7 +526,7 @@ def run_new_form_flow(db):
                     phone_number = request_existing_phone(db)
                 append = prompt_summary_save_mode()
                 db.save_summary(phone_number, summary_text, append=append)
-                print(f"Summary {'appended' if append else 'overwritten'} for {phone_number}.")
+                print(f"{COLOR_GREEN}Summary {COLOR_GREEN} {'appended' if append else 'overwritten'} for {phone_number}.{COLOR_RESET}")
             else:
                 print("Summary cannot be empty.")
             break
@@ -519,15 +540,15 @@ def run_rishta_given_flow(db):
 
     entered_any = False
     while True:
-        detail = input("Rishta detail (or blank to cancel): ").strip()
+        detail = input(f"{COLOR_BLUE}Rishta detail (or blank to cancel): {COLOR_RESET}").strip()
         if not detail:
             break
         db.append_rishta_given(phone_number, [detail])
-        print(f"Added Rishta Given item for {phone_number}.")
+        print(f"{COLOR_GREEN}Added Rishta Given item for {phone_number}.{COLOR_RESET}")
         entered_any = True
 
     if not entered_any:
-        print("No Rishta Given items were entered.")
+        print(f"{COLOR_RED}No Rishta Given items were entered.{COLOR_RESET}")
 
 
 def run_main_loop():

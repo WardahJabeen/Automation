@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import json
 import re
 import sys
@@ -21,7 +21,7 @@ from form_fields import (
  
 def normalize_text(text):
     text = text.strip()
-    text = re.sub(r"[^a-zA-Z0-9: /?&\-]+", " ", text)
+    text = re.sub(r"[^a-zA-Z0-9: /?&\-+()]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -66,6 +66,9 @@ def append_continuation(form_data, key, append):
     if append is None or append == "":
         return
 
+    if key in {"WhatsApp No", "Height"}:
+        return
+
     if key == "Age":
         if form_data.get(key):
             return
@@ -102,8 +105,17 @@ def extract_age_value(value: str) -> str:
 def clean_field_value(key, value):
     if value is None:
         return value
-    if key == "WhatsApp No":
-        value = re.sub(r"\s*registration\s+form\s*$", "", value, flags=re.IGNORECASE)
+    # if key == "WhatsApp No":
+    #     value = re.sub(r"\s*registration\s+form\s*$", "", value, flags=re.IGNORECASE).strip()
+    #     match = re.match(r'^\+?[\d\s\-()]+', value)
+    #     if match:
+    #         phone = match.group(0)
+    #         phone = re.sub(r'[^\d+]', '', phone)
+    #         return phone
+    #     match = re.search(r'\d{6,}', value)
+    #     if match:
+    #         return match.group(0)
+    #     return ""
     if key == "Age":
         return extract_age_value(value)
     return value
@@ -149,82 +161,82 @@ def parse_line(line, key_map):
     return None, None
 
 
-def find_key_value_pairs(line, key_map, max_candidate_len=60):
-    """Return list of (key, value) pairs found on a single line.
+# def find_key_value_pairs(line, key_map, max_candidate_len=60):
+#     """Return list of (key, value) pairs found on a single line.
 
-    Strategy: scan colon positions and attempt to find a preceding substring that
-    normalizes to a known key by trying start positions within a window. Prefer
-    the longest matching candidate for accuracy.
-    """
-    pairs = []
-    colons = [m.start() for m in re.finditer(':', line)]
-    if not colons:
-        return [], ""
+#     Strategy: scan colon positions and attempt to find a preceding substring that
+#     normalizes to a known key by trying start positions within a window. Prefer
+#     the longest matching candidate for accuracy.
+#     """
+#     pairs = []
+#     colons = [m.start() for m in re.finditer(':', line)]
+#     if not colons:
+#         return [], ""
 
-    boundaries = []  # tuples (start_index, colon_index, resolved_key)
-    for c in colons:
-        start_window = max(0, c - max_candidate_len)
-        best = None
-        best_norm = None
-        best_start = None
-        # try longer candidates first
-        for start in range(start_window, c):
-            # avoid candidates that include another colon (would span prior key:value)
-            if ':' in line[start:c]:
-                continue
-            candidate = line[start:c].strip()
-            if not candidate:
-                continue
-            # prefer exact normalized matches for boundaries (avoid fuzzy matches inside values)
-            nk = normalize_key(candidate)
-            if nk in key_map:
-                # look for a previous token immediately before candidate
-                # find the previous word token (skip spaces first)
-                j = start - 1
-                # skip whitespace
-                while j >= 0 and line[j].isspace():
-                    j -= 1
-                end = j
-                while j >= 0 and line[j].isalnum():
-                    j -= 1
-                prev_token = line[j+1:end+1].strip() if end >= 0 else ""
+#     boundaries = []  # tuples (start_index, colon_index, resolved_key)
+#     for c in colons:
+#         start_window = max(0, c - max_candidate_len)
+#         best = None
+#         best_norm = None
+#         best_start = None
+#         # try longer candidates first
+#         for start in range(start_window, c):
+#             # avoid candidates that include another colon (would span prior key:value)
+#             if ':' in line[start:c]:
+#                 continue
+#             candidate = line[start:c].strip()
+#             if not candidate:
+#                 continue
+#             # prefer exact normalized matches for boundaries (avoid fuzzy matches inside values)
+#             nk = normalize_key(candidate)
+#             if nk in key_map:
+#                 # look for a previous token immediately before candidate
+#                 # find the previous word token (skip spaces first)
+#                 j = start - 1
+#                 # skip whitespace
+#                 while j >= 0 and line[j].isspace():
+#                     j -= 1
+#                 end = j
+#                 while j >= 0 and line[j].isalnum():
+#                     j -= 1
+#                 prev_token = line[j+1:end+1].strip() if end >= 0 else ""
 
-                # if there's a long previous token (likely part of a phrase), only accept
-                # this candidate if the combined phrase is a known key; allow short tokens
-                if prev_token and len(prev_token) > 2:
-                    combined_nk = normalize_key(prev_token + " " + candidate)
-                    if combined_nk not in key_map:
-                        continue
+#                 # if there's a long previous token (likely part of a phrase), only accept
+#                 # this candidate if the combined phrase is a known key; allow short tokens
+#                 if prev_token and len(prev_token) > 2:
+#                     combined_nk = normalize_key(prev_token + " " + candidate)
+#                     if combined_nk not in key_map:
+#                         continue
 
-                resolved = key_map[nk]
-                if best is None or len(candidate) > len(best):
-                    best = candidate
-                    best_norm = resolved
-                    best_start = start
-        if best is not None:
-            boundaries.append((best_start, c, best_norm))
+#                 resolved = key_map[nk]
+#                 if best is None or len(candidate) > len(best):
+#                     best = candidate
+#                     best_norm = resolved
+#                     best_start = start
+#         if best is not None:
+#             boundaries.append((best_start, c, best_norm))
 
-    if not boundaries:
-        return pairs, ""
+#     if not boundaries:
+#         return pairs, ""
 
-    # sort boundaries by start index
-    boundaries.sort(key=lambda x: x[0])
+#     # sort boundaries by start index
+#     boundaries.sort(key=lambda x: x[0])
 
-    for idx, (start, colon_idx, resolved_key) in enumerate(boundaries):
-        value_start = colon_idx + 1
-        if idx + 1 < len(boundaries):
-            next_start = boundaries[idx + 1][0]
-            value = line[value_start:next_start].strip()
-        else:
-            value = line[value_start:].strip()
+#     for idx, (start, colon_idx, resolved_key) in enumerate(boundaries):
+#         value_start = colon_idx + 1
+#         if idx + 1 < len(boundaries):
+#             next_start = boundaries[idx + 1][0]
+#             value = line[value_start:next_start].strip()
+#         else:
+#             value = line[value_start:].strip()
 
-        pairs.append((resolved_key, value if value != "" else None))
+#         pairs.append((resolved_key, value if value != "" else None))
 
-    # any leading text before the first detected key boundary
-    first_start = boundaries[0][0] if boundaries else 0
-    leading = line[:first_start].strip()
+#     # any leading text before the first detected key boundary
+#     first_start = boundaries[0][0] if boundaries else 0
+#     leading = line[:first_start].strip()
 
-    return pairs, leading
+#     return pairs, leading
 
 
 def parse_form(lines):
@@ -271,41 +283,48 @@ def parse_form(lines):
             continue
 
         # First, try to extract multiple key:value pairs that may exist on the same line
-        pairs, leading = find_key_value_pairs(line, key_map)
-        if pairs:
-            # print(f"DEBUG: Processing line: {line}")
-            # if there's leading text before the first key, treat it as continuation
-            if leading and last_key is not None:
-                existing = form_data.get(last_key, "")
-                combined = (existing + " " + leading) if existing else leading
-                form_data[last_key] = sanitize_value(combined)
+        # pairs, leading = find_key_value_pairs(line, key_map)
+        # if pairs:
+        #     # print(f"DEBUG: Processing line: {line}")
+        #     print("LINE:", repr(line))
+        #     print("PAIRS:", pairs)
+        #     print("LEADING:", repr(leading))
+        #     # if there's leading text before the first key, treat it as continuation
+        #     if leading and last_key is not None:
+        #         print("\n===\n",last_key, leading,"\n===\n")
+        #         existing = form_data.get(last_key, "")
+        #         print(last_key)
+        #         print(type(form_data[last_key]))
+        #         print(repr(form_data[last_key]))
+        #         combined = (existing + " " + leading) if existing else leading
+        #         form_data[last_key] = sanitize_value(combined)
            
                 
 
-            for k, v in pairs:
+        #     for k, v in pairs:
                 
-                if k == SECTION_HEADER:
-                    seen_keys.add(SECTION_HEADER)
-                    in_requirements = True
-                    if v and not form_data.get(SECTION_HEADER):
-                        form_data[SECTION_HEADER] = sanitize_value(v)
-                        last_key = SECTION_HEADER
-                    continue
+        #         if k == SECTION_HEADER:
+        #             seen_keys.add(SECTION_HEADER)
+        #             in_requirements = True
+        #             if v and not form_data.get(SECTION_HEADER):
+        #                 form_data[SECTION_HEADER] = sanitize_value(v)
+        #                 last_key = SECTION_HEADER
+        #             continue
 
-                if in_requirements and k in REQUIREMENT_DUPLICATE_FIELDS:
-                    k = REQUIREMENT_DUPLICATE_FIELDS[k]
+        #         if in_requirements and k in REQUIREMENT_DUPLICATE_FIELDS:
+        #             k = REQUIREMENT_DUPLICATE_FIELDS[k]
 
-                if v is None:
-                    pending_key = k
-                    seen_keys.add(k)
-                    last_key = k
-                    continue
+        #         if v is None:
+        #             pending_key = k
+        #             seen_keys.add(k)
+        #             last_key = k
+        #             continue
 
-                seen_keys.add(k)
-                append_form_value(form_data, k, v)
-                last_key = k
+        #         seen_keys.add(k)
+        #         append_form_value(form_data, k, v)
+        #         last_key = k
 
-            continue
+        #     continue
 
 
         # print(f"DEBUG 2: Processing line: {line}")
@@ -339,10 +358,10 @@ def parse_form(lines):
             continue
 
         # Section header starts special requirements mapping
-        if key == SECTION_HEADER:
+        if key == SECTION_HEADER or (key is None and re.search(r"\brequirement(s)?\b", line, re.IGNORECASE)):
             seen_keys.add(SECTION_HEADER)
             in_requirements = True
-            if value and not form_data.get(SECTION_HEADER):
+            if key == SECTION_HEADER and value and not form_data.get(SECTION_HEADER):
                 form_data[SECTION_HEADER] = sanitize_value(value)
                 last_key = SECTION_HEADER
             continue
@@ -354,8 +373,11 @@ def parse_form(lines):
             
         # If value is None then the next non-empty line is the value
         if value is None:
-            pending_key = key
             seen_keys.add(key)
+            if key in {"WhatsApp No", "Height"}:
+                last_key = None
+                continue
+            pending_key = key
             last_key = key
             continue
 

@@ -98,6 +98,12 @@ PHONE_ALIASES = {
     "WN Number": "WhatsApp No",
 }
 
+RISHTA_ALIASES = {
+    "Rishta sent": "Rishta Given",
+    "sent": "Rishta Given",
+    "Rishta Given/Sent": "Rishta Given",
+}
+
 ARRAY_FIELDS = {"Rishta Given"}
 
 ALL_FIELDS = [FIELD_STORAGE_KEYS.get(field, field) for field in FORM_FIELDS] + list(REQUIREMENT_DUPLICATE_FIELDS.values())
@@ -113,7 +119,7 @@ def normalize_key(text):
 
 def normalize_text(text):
     text = text.strip()
-    text = re.sub(r"[^a-zA-Z0-9: /?&\-]+", " ", text)
+    text = re.sub(r"[^a-zA-Z0-9: /?&\-+()]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -125,6 +131,7 @@ def build_key_map():
     key_map = {normalize_key(field): get_storage_key(field) for field in FORM_FIELDS}
     key_map.update({normalize_key(alias): get_storage_key(target) for alias, target in INCOME_ALIASES.items()})
     key_map.update({normalize_key(alias): get_storage_key(target) for alias, target in PHONE_ALIASES.items()})
+    key_map.update({normalize_key(alias): get_storage_key(target) for alias, target in RISHTA_ALIASES.items()})
     return key_map
 
 
